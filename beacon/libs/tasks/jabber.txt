@@ -1,0 +1,21 @@
+
+def main(number, time_s):
+    import pyautogui
+    import os
+    import time
+    os.popen("open /Applications/Cisco\ Jabber.app")
+
+    time.sleep(5)
+
+    pyautogui.keyDown('shiftleft')
+    pyautogui.press('tab')
+    pyautogui.keyUp('shiftleft')
+
+    time.sleep(1)
+    pyautogui.typewrite(number, 0.5)
+    time.sleep(1)
+    pyautogui.press('enter')
+    time.sleep(time_s)
+
+    pyautogui.press('enter')
+    return 'DONE'

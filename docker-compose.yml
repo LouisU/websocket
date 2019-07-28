@@ -1,0 +1,28 @@
+version: '3'
+
+
+
+services:
+  websocket:
+    image: ned100.cn.ibm.com:5000/websocket:1.0
+    networks:
+      - websocket-bridge
+    command: python app.py
+
+
+  nginx:
+    image: nginx:latest
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+      - /gcg/certificates:/etc/certificate
+    depends_on:
+      - websocket
+    networks:
+      - websocket-bridge
+    ports:
+      - 4433:443
+
+
+networks:
+  websocket-bridge:
+    driver: bridge
