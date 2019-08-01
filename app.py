@@ -11,6 +11,10 @@ from beacon.libs.celery import AsyncTask
 import time
 import uuid
 from redis import Redis
+import requests
+import urllib3
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # 新加入的代码-开始
 thread = None
@@ -46,15 +50,17 @@ def code_pull():
     print(code)
     return code
 
+
 @app.route('/demo4/code/push', methods=['post'])
 def code_push():
     data = json.loads(request.data)
     file = data['file']
     code = read_code(file)
     uid = uuid.uuid1().hex
-
-    op_redis.set(uid, code)
-    return jsonify({'id':uid})
+    data = {"task_id": uid, "task_name": file, "value": code}
+    post_data = requests.post(url='https://ned83.cn.ibm.com/api/v2/current/celery_task', json=data, verify=False)
+    print(post_data.content)
+    return jsonify({'task_id':uid})
 
 
 @app.route('/demo4/task', methods=['post'])
@@ -62,6 +68,7 @@ def celery_task():
     data = json.loads(request.data)
     agent = data['agent']
     task = data['task']
+    task_uid = data['task_uid']
     kwargs = data['kwargs']
     if task == 'sniff' or task == 'webex':
         beacon_id = agent
@@ -69,10 +76,8 @@ def celery_task():
         beacon_id = uuid.uuid1().hex
     else:
         return jsonify({'error': 'This is no task named {}'.format(task)})
-    AsyncTask.apply_async(
-        kwargs={'code': task, 'kwargs':kwargs},
-        queue=agent
-    )
+
+    AsyncTask.apply_async(kwargs={'id': task_uid, 'kwargs': kwargs}, queue=agent)
 
     return jsonify({'beacon_id': beacon_id})
 
@@ -86,7 +91,7 @@ def webex_tasks():
     beacon_id = agent
 
     AsyncTask.apply_async(
-        kwargs={'file_name': 'selenium_webex'},
+        kwargs={'id': '4d4e745cb1b511e9ad50f45c89a98579'},
         queue=agent
     )
     return jsonify({'beacon_id': beacon_id})
@@ -99,8 +104,8 @@ def data_sniff():
 
     beacon_id = agent
     AsyncTask.apply_async(
-        kwargs={'file_name': 'webex_jabber_capture',
-                'kwargs': ['"{}"'.format(str({"task_type": task_type, "beacon_id":beacon_id}))]
+        kwargs={'id': 'a2b46576b1a811e9989af45c89a98579',
+                'kwargs': {'args': {"task_type": task_type, "beacon_id":beacon_id}}
                 },
         queue=agent
     )
@@ -132,7 +137,7 @@ def ping_tasks():
         #     }, queue=agent)
         task = AsyncTask.apply_async(
             kwargs={
-                'code': code,
+                'id': 'f9febe28af7111e9bfccf45c89a98579',
                 'kwargs': {"params":{"target": target['target'], "task_id": beacon_id}}
             }, queue=agent)
         # print(task.id)
@@ -159,8 +164,8 @@ def browser_tasks():
         # task_id = task_id_u.hex
         task = AsyncTask.apply_async(
             kwargs={
-                'file_name': 'web_browser',
-                'kwargs': ['"{}"'.format(str({"target": target['target'], "task_id":beacon_id}))]
+                'id': '883650bcb1a611e99317f45c89a98579',
+                'kwargs': {'params': {"target": target['target'], "task_id":beacon_id}}
             }, queue=agent)
 
         # task_id_list.append(task.id)
@@ -197,7 +202,7 @@ def jabber_task():
     beacon_id = agent
     task = AsyncTask.apply_async(
         kwargs={
-            'code': code,
+            'id': '76966a36af7b11e9b58ff45c89a98579',
             'kwargs': {'number': number, 'time_s':time}
         }, queue=agent)
     # beacon_id = agent

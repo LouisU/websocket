@@ -10,8 +10,8 @@ from celery.signals import after_task_publish, \
 from os import path
 import time
 from .console import WorkerInfo
-# import pyautogui
-# import os
+import requests
+import json
 
 
 celery_app = Celery('celery_app')
@@ -26,199 +26,68 @@ def sender(message):
 
 class _AsyncTask(Task):
     """
-    usage1: AsyncTask.apply_async(kwargs={'code':"def ...", ''kwargs':{'a':1, 'b':{'a':1, 'b':2}, 'c':(1,2,3), 'd':[1,2,3], 'e': 'start'}}, queue='louis-demo')
-            # code should be the string of function that you want to run. Note that, the last line of the code must be "func = youfunctionname "
-            # 'kwargs' inside the dict should be the arguments that you need to add to 'code'
+    usage: AsyncTask.apply_async(kwargs={'id':"xxx", ''kwargs':{'key1':value1, 'key2':'value2'}}, queue='louis-demo')
+            # 'kwargs' inside the dict should be the arguments that you want to delive to 'code'
             # kwargs outside the dict must be written when call function apply_async
-            # queue: where you want to send this task to
-
-    usage2: AsyncTask.apply_async(kwargs={'file_name':'hello'}, queue='louis-demo')
-            # hello.py should under the directory "beacon/libs/tasks/", location: "beacon/libs/tasks/hello.py"
+            # id should be the script uid in redis key
             # queue: where you want to send this task to
 
     """
-    # The variable only for test. Louis
-    CODE_EXAMPLE = '''
-def main(counter):
-    import time
-    sum = 0
-    for i in range(counter):
-        time.sleep(1)
-        sum += i
-    return sum
-_celery_task = main
-'''
 
     EXECUTE_CODE = '''
-    try:
-        _celery_task = main
-        result = _celery_task()
-        self.pass_result(result)
-    except:
-        raise Exception
+try:
+    _celery_task = main
+    _celery_task()
+except:
+    raise Exception
 '''
-    CODE_RESULT = None
 
     def __init__(self):
         super(_AsyncTask, self).__init__()
-        self.file_name = None
+        self.id = None
+        self.kwargs = None
         self.code = None
-        self.__task_type = None
 
-    def on_success(self, retval, task_id, args, kwargs):
-        # print('task id:{} done. result:{}.'.format(task_id, retval))
-        return super(_AsyncTask, self).on_success(retval, task_id, args, kwargs)
+    def get_script_code(self, id):
 
-    def on_failure(self, exc, task_id, args, kwargs, einfo):
-        # print('task_id:{} failed. reason:{}.'.format(task_id, exc))
-        return super(_AsyncTask, self).on_failure(exc, task_id, args, kwargs, einfo)
+        data = json.dumps({'id': id})
+        request = requests.post(url='https://ned100.cn.ibm.com:4433/demo4/code/pull', data=data, verify=False)
+        code = request.content
+        self.code = str(code, encoding='utf-8')
 
-    def pass_result(self, result):
-        self.CODE_RESULT = result
+    def joint_code_kwargs(self, kwargs):
 
-    def code_or_script(self, code, file_name, kwargs):
-        # print('code:{}'.format(code))
-        # print('file_name:{}'.format(file_name))
-        if file_name is None and code is None \
-                or file_name is not None and code is not None:
-            raise TypeError(
-                "{} has two arguments. one is required,  "
-                "other one must be None or ignored.".format(self.__class__.__name__)
-            )
-
-        if file_name is not None and re.search(r'\.py$', file_name) is None:
-            self.file_name = file_name + '.py'
-
-            self.__task_type = "script"
-            self.__args = kwargs
-
-        if code is not None:
-            if code == 'test':
-                self.__task_type = "code"
-                self.code = self.CODE_EXAMPLE
-                self.__kwargs = kwargs
+        code1 = self.EXECUTE_CODE[:self.EXECUTE_CODE.index('(')+1]
+        code2 = self.EXECUTE_CODE[self.EXECUTE_CODE.index(')'):]
+        codeM = ''
+        for key in kwargs.keys():
+            if type(kwargs[key]) == str:
+                codeM = codeM + key + "=" + "'{}'".format(kwargs[key]) + ","
             else:
+                codeM = codeM + key + "=" + str(kwargs[key]) + ","
 
-                # if re.search(r'.*_celery_task\s*=.*', code) is None:
-                #     raise ValueError(
-                #         'Please make sure your function was assigned to _celery_task '
-                #         'at the last line of code string. e.g. _celery_task = yourfunction  '
-                #     )
-                # else:
-                self.__task_type = "code"
-                self.code = code
-                self.__kwargs = kwargs
-
-    def get_args_or_kwargs(self):
-
-        if self.__task_type == 'code':
-            # code = """{}{}""".format(self.code, self.EXECUTE_CODE)
-            # brackets_index = re.search('.*(.*):', self.EXECUTE_CODE).span()[1]
-            # if brackets_index > self.EXECUTE_CODE.index('(') \
-            #         and brackets_index > self.EXECUTE_CODE.index(')'):
-            code1 = self.EXECUTE_CODE[:self.EXECUTE_CODE.index('(')+1]
-            code2 = self.EXECUTE_CODE[self.EXECUTE_CODE.index(')'):]
-            codeM = ''
-            for key in self.__kwargs.keys():
-                if type(self.__kwargs[key]) == str:
-                    codeM = codeM + key + "=" + "'{}'".format(self.__kwargs[key]) + ","
-                else:
-                    codeM = codeM + key + "=" + str(self.__kwargs[key]) + ","
-
-            self.EXECUTE_CODE = code1 + codeM + code2
-            self.code = """{}{}""".format(self.code, self.EXECUTE_CODE)
-
-        if self.__task_type == 'script':
-            args_str = ''
-            if type(self.__args) == list:
-                # print('args dic: {}'.format(self.__args))
-
-                for arg in self.__args:
-                    args_str = args_str + ' {}'.format(arg)
-
-            self.args_str = args_str
-            # print("agrs str joint:{}".format(self.args_str))
-
-    def _command_joint(self):
-        directory = path.dirname(__file__)
-        file_directory = directory + '/tasks/' + self.file_name
-        # print(self.args_str)
-        command = 'python ' + file_directory + self.args_str
-        # print(command)
-        return command
+        self.EXECUTE_CODE = code1 + codeM + code2
+        self.code = """{}{}""".format(self.code, self.EXECUTE_CODE)
 
     def code_task(self):
-        # code = """{}{}""".format(self.code, self.EXECUTE_CODE)
+
         print(self.code)
         exec(self.code)
-        return {"result": self.CODE_RESULT, 'time': time.ctime()}
 
-    def script_task(self):
-        command = self._command_joint()
-        # print(command)
-        try:
-            import os
-            result = os.system(command)
-            return result
+    def run(self, id, kwargs):
 
-        except Exception as e:
-            raise e
+        self.get_script_code(id)
 
-    def run(self, code=None, kwargs=None, file_name=None):
+        self.joint_code_kwargs(kwargs)
 
-        if file_name == 'selenium_webex':
-
-            try:
-                import os
-                command = 'xvfb-run --server-args="-screen 0 1024x768x24" python /webex_demo/selenium_webex.py'
-                result = os.system(command)
-                return result
-
-            except Exception as e:
-                raise e
-
-        self.code_or_script(code, file_name, kwargs)
-
-        self.get_args_or_kwargs()
-        # print('task type:{}'.format(self.__task_type))
-        if self.__task_type == 'script':
-            return self.script_task()
-        else:
-            return self.code_task()
-
-
-def add_func(a, b):
-    return a+b
-
-@celery_app.task
-def main():
-    # import time
-#     # sum = []
-#     # for i in range(counter):
-#     #     time.sleep(1)
-#     #     sum.append(add_func(counter, 1))
-#     # return sum
-    a = '''
-def numb():
-    return 1
-'''
-
-    b = '''
-def add_numb():
-    result = numb() + 1
-    return result
-
-print(add_numb())
-'''
-    code = '{}{}'.format(a, b)
-    print(code)
-    exec(code)
+        return self.code_task()
 
 
 AsyncTask = _AsyncTask()
 celery_app.register_task(AsyncTask)
 
-# ===================== beat task
+
+# =================== timing tasks
 # celery_app.conf.beat_schedule = {
 #     'script-task-every-60-seconds': {
 #         'task': 'beacon.libs.celery._AsyncTask',
