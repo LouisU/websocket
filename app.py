@@ -57,7 +57,9 @@ def code_push():
     file = data['file']
     code = read_code(file)
     uid = uuid.uuid1().hex
-    op_redis.set(uid, code)
+    data = {"task_id": uid, "task_name": file, "value": code}
+    post_data = requests.post(url='https://ned83.cn.ibm.com/api/v2/current/celery_task', json=data, verify=False)
+    print(post_data.content)
     return jsonify({'task_id':uid})
 
 
