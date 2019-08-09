@@ -41,13 +41,30 @@ socketio = SocketIO(app)
 #     #                   namespace='/test')
 #     pass
 
+@app.route('/task/assgin', methods=['post'])
+def task_assign():
+
+    data = json.loads(request.data)
+    beacon_id = data['name']
+    AsyncTask.apply_async(
+        kwargs={'task_id': data['task_id'], 'kwargs': {}},
+        queue=data['queue'],
+    )
+    return jsonify({'beacon_id': beacon_id})
+
+
 @app.route('/demo4/code/pull', methods=['post'])
 def code_pull():
 
     data = json.loads(request.data)
-    uid = data['id']
-    code = op_redis.get(uid)
-    print(code)
+    uid = data['task_id']
+    result = requests.get(url='https://ned83.cn.ibm.com/api/v2/current/celery_task', params=data, verify=False)
+    print(request.url)
+    result = json.loads(result.content)
+    result = result['data']
+    key = list(result.keys())[0]
+    result = result[key]
+    code = result['value']
     return code
 
 
