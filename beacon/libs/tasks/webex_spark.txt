@@ -1,5 +1,5 @@
 
-def main():
+def main(socket_room):
     import os
     import selenium
     from selenium import webdriver
@@ -12,6 +12,14 @@ def main():
     from pyvirtualdisplay import Display
     import socket
     import requests
+
+    def post_data_to_socketroom(room, data):
+        json_data = {
+            "webex": data,
+            "room": room
+        }
+        print("received:{}".format(json_data))
+        requests.post('https://ned100.cn.ibm.com:4433/webex', data=json.dumps(json_data), verify=False)
 
     #******************************format time start ******************************************
     interval = 5  # 5 minute
@@ -74,5 +82,5 @@ def main():
 
     print(json_data)
     print(requests.post('https://ned83.cn.ibm.com/api/v2/current/webex_spark/', verify=False, json=json_data).content)
-
+    post_data_to_socketroom('webex_spark', json_data)
 

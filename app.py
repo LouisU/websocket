@@ -19,7 +19,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # 新加入的代码-开始
 thread = None
 thread_lock = Lock()
-op_redis = Redis(host="9.111.147.121", db=3, port=6379)
+op_redis = Redis(host="9.111.147.121", db=4, port=6379)
 
 app = Flask(__name__)
 
@@ -41,25 +41,56 @@ socketio = SocketIO(app)
 #     #                   namespace='/test')
 #     pass
 
+@app.route('/group/create', methods=['post'])
+def group_create():
+
+    data = json.loads(request.data)
+    try:
+        group_id = data['group_id']
+        key = '/group/{}/*'.format(group_id)
+        exist_list = op_redis.keys(key)
+        if exist_list.count() != 0:
+            return jsonify({'error': "{} already exists".format(group_id)})
+
+    except Exception:
+        group_id = uuid.uuid1().hex
+
+    key = '/group/{}/{}/{}/{}/{}/{}'.format(
+        group_id, data['name'], data['start_time'], data['end_time'], data['interval'],
+        data['queue']
+    )
+    value = json.dumps(data['tasks'])
+
+    op_redis.set(key, value)
+
+    return jsonify({'group_id': group_id})
+
+
 @app.route('/task/assgin', methods=['post'])
 def task_assign():
 
     data = json.loads(request.data)
-    beacon_id = data['name']
+    print("recieved data:{} type:{}".format(data, type(data)))
+    socket_room = data['kwargs']['socket_room']
+
     AsyncTask.apply_async(
-        kwargs={'task_id': data['task_id'], 'kwargs': {}},
+        kwargs={'task_id': data['task_id'], 'kwargs': data['kwargs']},
         queue=data['queue'],
     )
-    return jsonify({'beacon_id': beacon_id})
+    return jsonify({'socket_room': socket_room})
 
 
-@app.route('/demo4/code/pull', methods=['post'])
+@app.route('/code/pull', methods=['get'])
 def code_pull():
 
-    data = json.loads(request.data)
-    uid = data['task_id']
+    task_id = request.args.get('task_id')
+    # uid = data['task_id']
+    # print(task_id)
+    data={'task_id': task_id}
+    # data = json.loads(data)
+    print(data)
     result = requests.get(url='https://ned83.cn.ibm.com/api/v2/current/celery_task', params=data, verify=False)
-    print(request.url)
+    print(result.url)
     result = json.loads(result.content)
     result = result['data']
     key = list(result.keys())[0]
@@ -68,13 +99,30 @@ def code_pull():
     return code
 
 
-@app.route('/demo4/code/push', methods=['post'])
+@app.route('/code/push', methods=['post'])
 def code_push():
     data = json.loads(request.data)
     file = data['file']
     code = read_code(file)
     uid = uuid.uuid1().hex
     data = {"task_id": uid, "task_name": file, "value": code}
+    post_data = requests.post(url='https://ned83.cn.ibm.com/api/v2/current/celery_task', json=data, verify=False)
+    print(post_data.content)
+    return jsonify({'task_id':uid})
+
+
+@app.route('/code/push2', methods=['post'])
+def code_push2():
+    # print(request.data)
+    # data = request.form['name']
+    # data = json.loads(request.data)
+    # print(data)
+    name = request.form['name']
+    code = request.form['code']
+    print(name)
+    print(code)
+    uid = uuid.uuid1().hex
+    data = {"task_id": uid, "task_name": name, "value": code}
     post_data = requests.post(url='https://ned83.cn.ibm.com/api/v2/current/celery_task', json=data, verify=False)
     print(post_data.content)
     return jsonify({'task_id':uid})
@@ -297,8 +345,30 @@ def test_broadcast_message(message):
 
 @socketio.on('join', namespace='/demo4')
 def join(message):
-    join_room(message['room'])
-    session['receive_count'] = session.get('receive_count', 0) + 1
+    room = message['room']
+    print(room)
+    timestamp = ((int(time.time()) // (5 * 60)) * 5 * 60) - 300
+    print(timestamp)
+    if room == 'webex_spark':
+        while True:
+            url = 'https://ned83.cn.ibm.com/api/v2/current/webex_spark/?unix_time={:.1f}'.format(timestamp)
+            print(url)
+            request = requests.get(url, verify=False)
+            print(request.content)
+            result = request.content
+            result = json.loads(result)
+            if result['ret'] != "failed":
+                break
+            timestamp = timestamp - 300
+        print(result)
+
+    join_room(room)
+    emit('my_response',
+         {'data': result})
+
+
+
+    # session['receive_count'] = session.get('receive_count', 0) + 1
     # emit('my_response',
     #      {'data': 'In rooms: ' + ', '.join(rooms()),
     #       'count': session['receive_count']})

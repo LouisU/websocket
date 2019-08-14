@@ -19,6 +19,7 @@ def main():
             "webex": data,
             "room": room
         }
+        print("received:{}".format(json_data))
         requests.post('https://ned100.cn.ibm.com:4433/webex', data=json.dumps(json_data), verify=False)
 
     #******************************format time start ******************************************

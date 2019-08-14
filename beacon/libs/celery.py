@@ -48,12 +48,17 @@ except:
         self.kwargs = None
         self.code = None
 
-    def get_script_code(self, id):
+    def get_script_code(self, task_id):
 
-        data = json.dumps({'id': id})
-        request = requests.post(url='https://ned100.cn.ibm.com:4433/demo4/code/pull', data=data, verify=False)
-        code = request.content
-        self.code = str(code, encoding='utf-8')
+        data = {'task_id': task_id}
+        request = requests.get(url='https://ned83.cn.ibm.com/api/v2/current/celery_task', params=data, verify=False)
+        print(request.url)
+        result = json.loads(request.content)
+        result = result['data']
+        key = list(result.keys())[0]
+        result = result[key]
+        code = result['value']
+        self.code = code
 
     def joint_code_kwargs(self, kwargs):
 
@@ -74,13 +79,51 @@ except:
         print(self.code)
         exec(self.code)
 
-    def run(self, id, kwargs):
+    def run(self, task_id, kwargs):
 
-        self.get_script_code(id)
+        self.get_script_code(task_id)
 
         self.joint_code_kwargs(kwargs)
 
         return self.code_task()
+
+
+@celery_app.task
+def task_manager():
+
+    # todo get all the valid groups
+    # group: name, uuid, tasks[task1(params), task2(params), task3(params), task4(params)],
+    #        start_time, end_time, interval, end_date
+    groups = [
+        {'name': 'webex_overview',
+         # 'start_time':'',
+         # 'end_time':'',
+         # 'end_date': '2019-09-01',
+         'interval': 300,
+         'last_exec_time':'1565325126',
+         'tasks': [
+             {'task_id':'7d9e85ccb9a111e99d82f45c89a98579', 'kwargs':{},
+              'queue':'CM@webex_spark', 'room': 'web_spark', 'worker':'', },
+
+             {'task_id': '7d9e85ccb9a111e99d82f45c89a98579', 'kwargs': {},
+              'queue':'CT@webex_spark', 'room': 'web_spark', 'worker':''},
+         ]
+
+         },
+        ]
+    now = int(time.time())
+
+    for group in groups:
+
+        if now > group['last_exec_time'] + group['interval']:
+            for task in group['tasks']:
+                data = {}
+                data['task_id'] = task['task_id']
+                data['kwargs'] = task['kwargs']
+                data['queue'] = task['queue']
+                data['worker'] = task['worker']
+                data['name'] = group['name']
+                request = requests.post(url='https://ned100.cn.ibm.com:4433/task/assgin', params=data, verify=False)
 
 
 AsyncTask = _AsyncTask()
@@ -88,22 +131,26 @@ celery_app.register_task(AsyncTask)
 
 
 # =================== timing tasks
-# celery_app.conf.beat_schedule = {
-#     'script-task-every-60-seconds': {
-#         'task': 'beacon.libs.celery._AsyncTask',
-#         'schedule': 60.0,
-#         'kwargs': {'file_name': 'hello', 'code': None},
-#         'options': {'queue': "louis"}
-#     },
-#
-#     'code-task-every-30-seconds': {
-#         'task': 'beacon.libs.celery._AsyncTask',
-#         'schedule': 30.0,
-#         'kwargs': {'code': AsyncTask.CODE_EXAMPLE, 'kwargs': {'counter': 9}},
-#         'options': {'queue': "louis"}
-#     }
-#
-# }
+celery_app.conf.beat_schedule = {
+    # 'CM_webex_spark_task': {
+    #     'task': 'beacon.libs.celery._AsyncTask',
+    #     'schedule': 300.0,
+    #     'kwargs': {'task_id': '7d9e85ccb9a111e99d82f45c89a98579', 'kwargs': {}},
+    #     'options': {'queue': "CM@webex_spark"}
+    # },
+    #
+    # 'CT_webex_spark_task': {
+    #     'task': 'beacon.libs.celery._AsyncTask',
+    #     'schedule': 300.0,
+    #     'kwargs': {'task_id': '7d9e85ccb9a111e99d82f45c89a98579', 'kwargs': {}},
+    #     'options': {'queue': "CT@webex_spark"}
+    # }
+    'task_management': {
+        'task': 'beacon.libs.celery.task_manager',
+        'schedule': 60.0,
+        'options': {'queue': "task_manager"}
+    },
+}
 
 
 # ===================== signals
